@@ -1,0 +1,8 @@
+# To compile
+javac -classpath lib/hadoop-core-1.0.3.jar *.java
+
+# To create a jar file and preserve the hierarchy
+jar -cvf PageRank.jar PageRank/*.class
+
+# To run
+hadoop jar PageRank.jar PageRank.PageRank /test/input /test/output
