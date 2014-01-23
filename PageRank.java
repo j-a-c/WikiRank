@@ -14,20 +14,57 @@ import PageRank.XmlInputFormat;
 /**
  * CIS4930IDS Project 1.
  * Computes the PageRank for the Wikipedia XML format.
+ *
+ * Output format:
+ *
+ * your-bucket-name
+ *      results/PageRank.inlink.out
+ *      results/PageRank.n.out
+ *      results/PageRank.iter1.out (output file for iteration 1)
+ *      results/PageRank.iter8.out (output file for iteration 8)
+ *      logs/ (the job log direcotry)
+ *      job/PageRank.jar (job jar)
+ *      tmp/ (temporary files) 
  */
 public class PageRank 
 {
 
-    // Mapper<KeyIn, ValueIn, KeyOut, ValueOut>
-    public static class Map extends MapReduceBase implements 
-        Mapper<LongWritable, Text, Text, IntWritable> 
+    // Bucket that we will be operating in.
+    String bucketName;
+    // Input location for the Wikipedia XML dump.
+    String XMLinputLocation;
+    // Output for the parse Wikipedia XML dump.
+    String XMLoutputLocation;
+
+    PageRank(String bucketName)
     {
-        private final static IntWritable one = new IntWritable(1);
+        // TODO Uncomment for submission.
+        // this.bucketName = "s3n://" + bucketName;
+        // this.XMLinputLocation = "s3://spring-2014-ds/data/enwiki-latest-pages-articles.xml";
+        
+        // TODO Delete before submission!
+        this.bucketName = "/" + bucketName;
+        this.XMLinputLocation = "/test/wiki-pages.xml";
+
+        // Keep the file paths below.
+        // Output for the parsed XML.
+        this.XMLoutputLocation = this.bucketName + "/results/PageRank.inlink.out";
+
+    }
+
+    /**
+     * Parses the Wikipedia XML input and outputs the link structure.
+     *
+     * Mapper<KeyIn, ValueIn, KeyOut, ValueOut>
+     */
+    public class XMLMapper extends MapReduceBase implements 
+        Mapper<LongWritable, Text, Text, Text> 
+    {
         private Text word = new Text();
 
         // map(key, value, OutputCollector<KeyOut,ValueOut>)
         public void map(LongWritable key, Text value, 
-                OutputCollector<Text, IntWritable> output, 
+                OutputCollector<Text, Text> output, 
                 Reporter reporter) throws IOException 
         {
             String line = value.toString();
@@ -35,13 +72,16 @@ public class PageRank
             while (tokenizer.hasMoreTokens()) 
             {
                 word.set(tokenizer.nextToken());
-                output.collect(word, one);
+                output.collect(word, word);
             }
         }
     }
 
-    // Reducer<KeyIn, ValueIn, KeyOut, ValueOut>
-    public static class Reduce extends MapReduceBase implements 
+    /**
+     * TODO Use this sample reduce function.
+     * Reducer<KeyIn, ValueIn, KeyOut, ValueOut>
+     */
+    public class Reduce extends MapReduceBase implements 
         Reducer<Text, IntWritable, Text, IntWritable> 
     {
         // reduce(KeyIn key, Iterator<ValueIn> values, 
@@ -59,48 +99,39 @@ public class PageRank
         }
     }
 
-    /*
+    /**
      * Parses the Wikipedia XML format.
      */
-    public void parseXML(String inputPath) throws IOException
+    public void parseXML() throws IOException
     {
         // Configuration for this job.
         JobConf conf = new JobConf(PageRank.class);
         conf.setJobName("pagerank");
 
         // Input location.
-        FileInputFormat.setInputPaths(conf, new Path(inputPath));
+        FileInputFormat.setInputPaths(conf, new Path(this.XMLinputLocation));
 
-        FileInputFormat.setInputPaths(conf, new Path(inputPath));
         // Class to parse XML
         conf.setInputFormat(XmlInputFormat.class);
         conf.set(XmlInputFormat.START_TAG_KEY, "<page>");
         conf.set(XmlInputFormat.END_TAG_KEY, "</page>");
 
-        // Mapper
-        conf.setMapperClass(Map.class);
-        // Combiner
-        conf.setCombinerClass(Reduce.class);
-        // Reducer
-        conf.setReducerClass(Reduce.class);
-
-        conf.setInputFormat(TextInputFormat.class);
+         // Mapper class to parse XML.
+        conf.setMapperClass(XMLMapper.class);
+ 
+        // Output configuration.
+        FileOutputFormat.setOutputPath(conf, new Path(XMLoutputLocation));
         conf.setOutputFormat(TextOutputFormat.class);
-
-        // TODO Set output path.
-        FileOutputFormat.setOutputPath(conf, new Path("TODO"));
-
         conf.setOutputKeyClass(Text.class);
-        conf.setOutputValueClass(IntWritable.class);
+        conf.setOutputValueClass(Text.class);
 
         JobClient.runJob(conf);
     }
 
-    /*
+    /**
      * Run the PageRank algorithm.
      *
-     * arg[0] = input location.
-     * arg[1] = output location.
+     * arg[0] = bucket name.
      */
     public static void main(String[] args) throws Exception 
     {
@@ -110,10 +141,10 @@ public class PageRank
             System.out.println("Usage java PageRank inputPath outputPath");
         }
 
-        PageRank pagerank = new PageRank();
+        PageRank pagerank = new PageRank(args[0]);
         
         // Parse the XML to map input links to output links.
-        pagerank.parseXML(args[0]);
+        pagerank.parseXML();
 
         // TODO Count number of pages.
         // TODO Compute PageRank.
