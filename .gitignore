@@ -1,5 +1,6 @@
-# Java .class files
+# Java files
 *.class
+PageRank.jar
 
 # Resources
 *.pdf

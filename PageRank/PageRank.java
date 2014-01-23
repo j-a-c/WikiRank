@@ -88,6 +88,10 @@ public class PageRank
             bodyStart = xml.find(">", bodyStart); 
             int bodyEnd = xml.find("</text>", bodyStart);
             bodyStart += 1; // Get outside of tag.
+
+            // If there is no <text ...>...</text>.
+            if(bodyStart == -1 || bodyEnd == -1)
+                return;
             
             String body = Text.decode(xml.getBytes(), bodyStart, 
                     bodyEnd-bodyStart);
