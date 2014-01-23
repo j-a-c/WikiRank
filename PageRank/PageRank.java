@@ -69,6 +69,9 @@ public class PageRank
         private Text key = new Text();
         private Text value = new Text();
 
+        // Match [a] and [a|b], in both cases returning 'a'.
+        private static Pattern pattern = Pattern.compile("\\[\\[([^\\]|]*)[^\\]]*\\]");
+
         // map(key, value, OutputCollector<KeyOut,ValueOut>)
         public void map(LongWritable keyIn, Text xml, 
                 OutputCollector<Text, Text> output, 
@@ -79,8 +82,9 @@ public class PageRank
             int titleEnd = xml.find("</title>", titleStart);
             titleStart += 7; // Get outside of tag.
 
+            // Remove all spaces from the title.
             String title = Text.decode(xml.getBytes(), titleStart,
-                    titleEnd-titleStart);
+                    titleEnd-titleStart).replace(' ', '_');
 
             // Parse text body. This is where we will search for links.
             int bodyStart = xml.find("<text");
@@ -96,14 +100,13 @@ public class PageRank
             String body = Text.decode(xml.getBytes(), bodyStart, 
                     bodyEnd-bodyStart);
             
-            // Match [a] and [a|b], in both cases returning 'a'.
-            Pattern pattern = Pattern.compile("\\[([^\\]|]*)[^\\]]*\\]");
+            // Find the links.
             Matcher matcher = pattern.matcher(body);
 
             // Holds the unique links found on this page.
             Set<String> uniqueLinks = new HashSet<String>();
 
-            // Find the new links, and replace spaces with underscores.
+            // Find the unique links, and replace spaces with underscores.
             while(matcher.find())
                 uniqueLinks.add(matcher.group(1).replace(' ', '_'));
 
@@ -191,7 +194,6 @@ public class PageRank
         if (args.length != 1)
         {
             System.out.println("Usage java PageRank bucketName");
-            System.out.println(args[0]);
             return;
         }
 
