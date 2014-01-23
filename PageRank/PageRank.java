@@ -1,7 +1,11 @@
 package PageRank;
 
 import java.io.IOException;
-import java.util.*;
+import java.lang.StringBuilder;
+import java.util.Iterator;
+import java.util.regex.*;
+import java.util.HashSet;
+import java.util.Set;
 
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.conf.*;
@@ -44,12 +48,11 @@ public class PageRank
         
         // TODO Delete before submission!
         this.bucketName = "/" + bucketName;
-        this.XMLinputLocation = "/test/wiki-pages.xml";
+        this.XMLinputLocation = "/wiki-pages.xml";
 
         // Keep the file paths below.
         // Output for the parsed XML.
         this.XMLoutputLocation = this.bucketName + "/results/PageRank.inlink.out";
-
     }
 
     /**
@@ -57,28 +60,68 @@ public class PageRank
      *
      * Mapper<KeyIn, ValueIn, KeyOut, ValueOut>
      */
-    public class XMLMapper extends MapReduceBase implements 
+    public static class XMLMapper extends MapReduceBase implements 
         Mapper<LongWritable, Text, Text, Text> 
     {
-        private Text word = new Text();
+        public XMLMapper(){}
+
+        // Key and values to be output.
+        private Text key = new Text();
+        private Text value = new Text();
 
         // map(key, value, OutputCollector<KeyOut,ValueOut>)
-        public void map(LongWritable key, Text value, 
+        public void map(LongWritable keyIn, Text xml, 
                 OutputCollector<Text, Text> output, 
                 Reporter reporter) throws IOException 
         {
-            String line = value.toString();
-            StringTokenizer tokenizer = new StringTokenizer(line);
-            while (tokenizer.hasMoreTokens()) 
+            // Parse the page title. This will be the key for our output.
+            int titleStart = xml.find("<title>");
+            int titleEnd = xml.find("</title>", titleStart);
+            titleStart += 7; // Get outside of tag.
+
+            String title = Text.decode(xml.getBytes(), titleStart,
+                    titleEnd-titleStart);
+
+            // Parse text body. This is where we will search for links.
+            int bodyStart = xml.find("<text");
+            // <text ...> may contain some fields.
+            bodyStart = xml.find(">", bodyStart); 
+            int bodyEnd = xml.find("</text>", bodyStart);
+            bodyStart += 1; // Get outside of tag.
+            
+            String body = Text.decode(xml.getBytes(), bodyStart, 
+                    bodyEnd-bodyStart);
+            
+            // Match [a] and [a|b], in both cases returning 'a'.
+            Pattern pattern = Pattern.compile("\\[([^\\]|]*)[^\\]]*\\]");
+            Matcher matcher = pattern.matcher(body);
+
+            // Holds the unique links found on this page.
+            Set<String> uniqueLinks = new HashSet<String>();
+
+            // Find the new links, and replace spaces with underscores.
+            while(matcher.find())
+                uniqueLinks.add(matcher.group(1).replace(' ', '_'));
+
+            // This will hold the links the we will output.
+            StringBuilder outLinks = new StringBuilder();
+            for (String link : uniqueLinks)
             {
-                word.set(tokenizer.nextToken());
-                output.collect(word, word);
+                outLinks.append(link);
+                outLinks.append(' ');
             }
+            
+            // Set our key and value.
+            key.set(title);
+            value.set(outLinks.toString());
+
+            //key.set, value.set
+            output.collect(key, value);
         }
     }
 
     /**
-     * TODO Use this sample reduce function.
+     * TODO Use this sample reduce function later.
      * Reducer<KeyIn, ValueIn, KeyOut, ValueOut>
      */
     public class Reduce extends MapReduceBase implements 
@@ -101,12 +144,13 @@ public class PageRank
 
     /**
      * Parses the Wikipedia XML format.
+     * This has Job has no Reduce step.
      */
     public void parseXML() throws IOException
     {
         // Configuration for this job.
         JobConf conf = new JobConf(PageRank.class);
-        conf.setJobName("pagerank");
+        conf.setJobName("PageRankParseXML");
 
         // Input location.
         FileInputFormat.setInputPaths(conf, new Path(this.XMLinputLocation));
@@ -118,6 +162,10 @@ public class PageRank
 
          // Mapper class to parse XML.
         conf.setMapperClass(XMLMapper.class);
+
+        // We will not use a reducer for this task to avoid the sorting and
+        // shuffling.
+        conf.setNumReduceTasks(0);
  
         // Output configuration.
         FileOutputFormat.setOutputPath(conf, new Path(XMLoutputLocation));
@@ -136,9 +184,11 @@ public class PageRank
     public static void main(String[] args) throws Exception 
     {
         // Validate args length.
-        if (args.length != 2)
+        if (args.length != 1)
         {
-            System.out.println("Usage java PageRank inputPath outputPath");
+            System.out.println("Usage java PageRank bucketName");
+            System.out.println(args[0]);
+            return;
         }
 
         PageRank pagerank = new PageRank(args[0]);

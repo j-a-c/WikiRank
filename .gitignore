@@ -1,2 +1,6 @@
 # Java .class files
 *.class
+
+# Resources
+*.pdf
+*.xml

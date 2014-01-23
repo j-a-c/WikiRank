@@ -5,4 +5,4 @@ javac -classpath lib/hadoop-core-1.0.3.jar *.java
 jar -cvf PageRank.jar PageRank/*.class
 
 # To run
-hadoop jar PageRank.jar PageRank.PageRank /test/input /test/output
+hadoop jar PageRank.jar PageRank.PageRank test
