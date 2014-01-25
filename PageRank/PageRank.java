@@ -37,10 +37,19 @@ public class PageRank
     String bucketName;
     // Input location for the Wikipedia XML dump.
     String XMLinputLocation;
-    // Output for the parse Wikipedia XML dump.
+    // Output for the parsed Wikipedia XML dump.
     String XMLoutputLocation;
+    // Input location for the job that counts the number of pages.
+    String CountInputLocation;
+    // Output location for the job that counts the number of pages.
+    String CountOutputLocation;
 
-    PageRank(String bucketName)
+    /**
+     * Constructor for a PageRank job.
+     * Configures the various input and output locations using the given
+     * bucket name.
+     */
+    public PageRank(String bucketName)
     {
         // TODO Uncomment for submission.
         // this.bucketName = "s3n://" + bucketName;
@@ -53,6 +62,9 @@ public class PageRank
         // Keep the file paths below.
         // Output for the parsed XML.
         this.XMLoutputLocation = this.bucketName + "/results/PageRank.inlink.out";
+        // Input and output location for the count job.
+        this.CountInputLocation = this.XMLoutputLocation;
+        this.CountOutputLocation = this.bucketName + "/results/PageRank.n.out";
     }
 
     /**
@@ -128,28 +140,6 @@ public class PageRank
     }
 
     /**
-     * TODO Use this sample reduce function later.
-     * Reducer<KeyIn, ValueIn, KeyOut, ValueOut>
-     */
-    public class Reduce extends MapReduceBase implements 
-        Reducer<Text, IntWritable, Text, IntWritable> 
-    {
-        // reduce(KeyIn key, Iterator<ValueIn> values, 
-        // OutputCollector<KeyOut,ValueOut> output, Reporter reporter) 
-        public void reduce(Text key, Iterator<IntWritable> values, 
-                OutputCollector<Text, IntWritable> output, 
-                Reporter reporter) throws IOException 
-        {
-            int sum = 0;
-            while (values.hasNext())
-            {
-                sum += values.next().get();
-            }
-            output.collect(key, new IntWritable(sum));
-        }
-    }
-
-    /**
      * Parses the Wikipedia XML format.
      * This has Job has no Reduce step.
      */
@@ -176,9 +166,103 @@ public class PageRank
  
         // Output configuration.
         FileOutputFormat.setOutputPath(conf, new Path(XMLoutputLocation));
-        conf.setOutputFormat(TextOutputFormat.class);
         conf.setOutputKeyClass(Text.class);
         conf.setOutputValueClass(Text.class);
+
+        // Output type.
+        conf.setOutputFormat(TextOutputFormat.class);
+
+        JobClient.runJob(conf);
+    }
+
+    /**
+     * Maps each page to <1,PageTitle>.
+     * This mapper will be receiving the output produced from parseXML();
+     * The input will be of the form "pageTitle link1 link2...".
+     */
+    public static class CountMapper extends MapReduceBase implements 
+        Mapper<LongWritable, Text, IntWritable, Text> 
+    {
+        // We will use this to group all the pages.
+        private final static IntWritable one = new IntWritable(1);
+
+        public CountMapper(){}
+
+        // map(key, value, OutputCollector<KeyOut,ValueOut>)
+        public void map(LongWritable keyIn, Text pageStats, 
+                OutputCollector<IntWritable, Text> output, 
+                Reporter reporter) throws IOException 
+        {
+            // The value will be the page title.
+            Text outVal = new Text(pageStats.toString().split("\\s+")[0]);
+            output.collect(one, outVal);
+        }
+    }
+
+    /**
+     * Counts the number of values (pages).
+     * Receives the output of CountMapper.
+     * Reducer<KeyIn, ValueIn, KeyOut, ValueOut>
+     */
+    public static class CountReducer extends MapReduceBase implements
+        Reducer<IntWritable, Text, Text, Text> 
+    {
+        public CountReducer(){}
+
+        // reduce(KeyIn key, Iterator<ValueIn> values, 
+        // OutputCollector<KeyOut,ValueOut> output, Reporter reporter) 
+        public void reduce(IntWritable key, Iterator<Text> values, 
+                OutputCollector<Text, Text> output, 
+                Reporter reporter) throws IOException 
+        {
+            // Count all the links.
+            int count = 0;
+            while (values.hasNext())
+            {
+                count++;
+                values.next();
+            }
+
+            Text outKey = new Text("N="+count);
+            Text outVal = new Text("");
+
+            output.collect(outKey, outVal); 
+        }
+    }
+
+    /**
+     * Counts the number of Wikipedia documents.
+     * This job has one reduce step.
+     */
+    public void countPages() throws IOException
+    {
+        // Configuration for this job.
+        JobConf conf = new JobConf(PageRank.class);
+        conf.setJobName("PageRankCountPages");
+
+        // TODO everything below here
+
+        // Input location.
+        FileInputFormat.setInputPaths(conf, new Path(this.CountInputLocation));
+
+        // Input type.
+        conf.setInputFormat(TextInputFormat.class);
+
+         // Mapper class to parse XML.
+        conf.setMapperClass(CountMapper.class);
+
+        // We will only have one reducer so we can count all the pages.
+        conf.setNumReduceTasks(1);
+        conf.setReducerClass(CountReducer.class);
+ 
+        // Output configuration.
+        FileOutputFormat.setOutputPath(conf, 
+                new Path(this.CountOutputLocation));
+        conf.setOutputKeyClass(IntWritable.class);
+        conf.setOutputValueClass(Text.class);
+
+        // Output type.
+        conf.setOutputFormat(TextOutputFormat.class);
 
         JobClient.runJob(conf);
     }
@@ -203,6 +287,8 @@ public class PageRank
         pagerank.parseXML();
 
         // TODO Count number of pages.
+        pagerank.countPages();
+
         // TODO Compute PageRank.
         // TODO Sort PageRank.
 
