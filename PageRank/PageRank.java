@@ -97,6 +97,7 @@ public class PageRank
             // Remove all spaces from the title.
             String title = Text.decode(xml.getBytes(), titleStart,
                     titleEnd-titleStart).replace(' ', '_');
+            value.set(title);
 
             // Parse text body. This is where we will search for links.
             int bodyStart = xml.find("<text");
@@ -115,27 +116,47 @@ public class PageRank
             // Find the links.
             Matcher matcher = pattern.matcher(body);
 
-            // Holds the unique links found on this page.
-            Set<String> uniqueLinks = new HashSet<String>();
-
-            // Find the unique links, and replace spaces with underscores.
+            // Output <outLink, currPage>
             while(matcher.find())
-                uniqueLinks.add(matcher.group(1).replace(' ', '_'));
-
-            // This will hold the links the we will output.
-            StringBuilder outLinks = new StringBuilder();
-            for (String link : uniqueLinks)
             {
-                outLinks.append(link);
-                outLinks.append(' ');
+                key.set(matcher.group(1).replace(' ', '_'));
+                output.collect(key, value);
             }
-            
-            // Set our key and value.
-            key.set(title);
-            value.set(outLinks.toString());
+        }
+    }
 
-            //key.set, value.set
-            output.collect(key, value);
+    /**
+     * Collects the pages that link the to key.
+     *
+     * Reducer<KeyIn, ValueIn, KeyOut, ValueOut>
+     */
+    public static class XMLReducer extends MapReduceBase implements
+        Reducer<Text, Text, Text, Text> 
+    {
+        private static final char SPACE = ' ';
+
+        private Text outValue = new Text();
+
+        public XMLReducer(){}
+
+        // reduce(KeyIn key, Iterator<ValueIn> values, 
+        // OutputCollector<KeyOut,ValueOut> output, Reporter reporter) 
+        public void reduce(Text key, Iterator<Text> values, 
+                OutputCollector<Text, Text> output, 
+                Reporter reporter) throws IOException 
+        {
+            StringBuilder builder = new StringBuilder();
+
+            if (values.hasNext())
+                builder.append(values.next());
+            while (values.hasNext())
+            {
+                builder.append(SPACE);
+                builder.append(values.next());
+            }
+
+            outValue.set(builder.toString());
+            output.collect(key, outValue); 
         }
     }
 
@@ -159,10 +180,8 @@ public class PageRank
 
          // Mapper class to parse XML.
         conf.setMapperClass(XMLMapper.class);
-
-        // We will not use a reducer for this task to avoid the sorting and
-        // shuffling.
-        conf.setNumReduceTasks(0);
+        conf.setCombinerClass(XMLReducer.class);
+        conf.setReducerClass(XMLReducer.class);
  
         // Output configuration.
         FileOutputFormat.setOutputPath(conf, new Path(XMLoutputLocation));
