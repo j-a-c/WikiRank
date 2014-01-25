@@ -181,7 +181,7 @@ public class PageRank
      * The input will be of the form "pageTitle link1 link2...".
      */
     public static class CountMapper extends MapReduceBase implements 
-        Mapper<LongWritable, Text, IntWritable, Text> 
+        Mapper<LongWritable, Text, IntWritable, IntWritable> 
     {
         // We will use this to group all the pages.
         private final static IntWritable one = new IntWritable(1);
@@ -190,12 +190,12 @@ public class PageRank
 
         // map(key, value, OutputCollector<KeyOut,ValueOut>)
         public void map(LongWritable keyIn, Text pageStats, 
-                OutputCollector<IntWritable, Text> output, 
+                OutputCollector<IntWritable, IntWritable> output, 
                 Reporter reporter) throws IOException 
         {
             // The value will be the page title.
-            Text outVal = new Text(pageStats.toString().split("\\s+")[0]);
-            output.collect(one, outVal);
+            //Text outVal = new Text(pageStats.toString().split("\\s+")[0]);
+            output.collect(one, one);
         }
     }
 
@@ -208,7 +208,7 @@ public class PageRank
      * Reducer<KeyIn, ValueIn, KeyOut, ValueOut>
      */
     public static class CountCombiner extends MapReduceBase implements
-        Reducer<IntWritable, Text, IntWritable, IntWritable> 
+        Reducer<IntWritable, IntWritable, IntWritable, IntWritable> 
     {
         // We will use this to group all the pages at the reducer.
         private final static IntWritable one = new IntWritable(1);
@@ -217,7 +217,7 @@ public class PageRank
 
         // reduce(KeyIn key, Iterator<ValueIn> values, 
         // OutputCollector<KeyOut,ValueOut> output, Reporter reporter) 
-        public void reduce(IntWritable key, Iterator<Text> values, 
+        public void reduce(IntWritable key, Iterator<IntWritable> values, 
                 OutputCollector<IntWritable, IntWritable> output, 
                 Reporter reporter) throws IOException 
         {
@@ -289,6 +289,9 @@ public class PageRank
         // Combiner for the mapper.
         conf.setCombinerClass(CountCombiner.class);
 
+        // Let us split the file into small pieces.
+        //conf.setNumMapTasks(10);
+
         // We will only have one reducer so we can count all the pages.
         conf.setNumReduceTasks(1);
         conf.setReducerClass(CountReducer.class);
@@ -297,7 +300,7 @@ public class PageRank
         FileOutputFormat.setOutputPath(conf, 
                 new Path(this.CountOutputLocation));
         conf.setOutputKeyClass(IntWritable.class);
-        conf.setOutputValueClass(Text.class);
+        conf.setOutputValueClass(IntWritable.class);
 
         // Output type.
         conf.setOutputFormat(TextOutputFormat.class);
