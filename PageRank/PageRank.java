@@ -199,19 +199,58 @@ public class PageRank
         }
     }
 
+   /**
+     * Counts the number of values (pages) this mapper has seen.
+     * Receives the output of CountMapper.
+     * Now, there shuffle/sort step will be smaller and the reducer can just
+     * add a couple values.
+     *
+     * Reducer<KeyIn, ValueIn, KeyOut, ValueOut>
+     */
+    public static class CountCombiner extends MapReduceBase implements
+        Reducer<IntWritable, Text, IntWritable, IntWritable> 
+    {
+        // We will use this to group all the pages at the reducer.
+        private final static IntWritable one = new IntWritable(1);
+
+        public CountCombiner(){}
+
+        // reduce(KeyIn key, Iterator<ValueIn> values, 
+        // OutputCollector<KeyOut,ValueOut> output, Reporter reporter) 
+        public void reduce(IntWritable key, Iterator<Text> values, 
+                OutputCollector<IntWritable, IntWritable> output, 
+                Reporter reporter) throws IOException 
+        {
+            // Count all the links this mapper has seen.
+            int count = 0;
+            while (values.hasNext())
+            {
+                count++;
+                values.next();
+            }
+
+            output.collect(one, new IntWritable(count)); 
+        }
+    }
+
+
     /**
      * Counts the number of values (pages).
-     * Receives the output of CountMapper.
+     * Receives the output of CountCombiner.
+     *
+     * The keys received will be <1, numPages>; we just need to add all the
+     * numPages together to get the total number of pages.
+     *
      * Reducer<KeyIn, ValueIn, KeyOut, ValueOut>
      */
     public static class CountReducer extends MapReduceBase implements
-        Reducer<IntWritable, Text, Text, Text> 
+        Reducer<IntWritable, IntWritable, Text, Text> 
     {
         public CountReducer(){}
 
         // reduce(KeyIn key, Iterator<ValueIn> values, 
         // OutputCollector<KeyOut,ValueOut> output, Reporter reporter) 
-        public void reduce(IntWritable key, Iterator<Text> values, 
+        public void reduce(IntWritable key, Iterator<IntWritable> values, 
                 OutputCollector<Text, Text> output, 
                 Reporter reporter) throws IOException 
         {
@@ -219,8 +258,7 @@ public class PageRank
             int count = 0;
             while (values.hasNext())
             {
-                count++;
-                values.next();
+                count += values.next().get();
             }
 
             Text outKey = new Text("N="+count);
@@ -240,16 +278,16 @@ public class PageRank
         JobConf conf = new JobConf(PageRank.class);
         conf.setJobName("PageRankCountPages");
 
-        // TODO everything below here
-
         // Input location.
         FileInputFormat.setInputPaths(conf, new Path(this.CountInputLocation));
 
         // Input type.
         conf.setInputFormat(TextInputFormat.class);
 
-         // Mapper class to parse XML.
+        // MApper class.
         conf.setMapperClass(CountMapper.class);
+        // Combiner for the mapper.
+        conf.setCombinerClass(CountCombiner.class);
 
         // We will only have one reducer so we can count all the pages.
         conf.setNumReduceTasks(1);
