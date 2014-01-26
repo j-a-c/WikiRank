@@ -35,6 +35,7 @@ import PageRank.XmlInputFormat;
  */
 public class PageRank 
 {
+    // TODO Set to 8.
     // The number of iterations to run the PageRank algorithm.
     private static final int NUM_PAGERANK_ITERS = 2;
 
@@ -85,7 +86,7 @@ public class PageRank
         this.XMLoutputLocation = this.bucketName + "/results/PageRank.inlink.out";
         // Input and output location for the count job.
         this.CountInputLocation = this.XMLoutputLocation;
-        this.CountOutputLocation = this.bucketName + "/results/PageRank.n.out/part";
+        this.CountOutputLocation = this.bucketName + "/results/PageRank.n.out";
         // Temporary matrix input and output locations.
         this.tempMatrixOutput = this.bucketName + "/tmp/matrixOut";
     }
@@ -321,6 +322,9 @@ public class PageRank
         // Combiner for the mapper.
         conf.setCombinerClass(CountCombiner.class);
 
+        conf.setOutputKeyClass(IntWritable.class);
+        conf.setOutputValueClass(Text.class);
+
         // We will only have one reducer so we can count all the pages.
         conf.setNumReduceTasks(1);
         conf.setReducerClass(CountReducer.class);
@@ -328,8 +332,6 @@ public class PageRank
         // Output configuration.
         FileOutputFormat.setOutputPath(conf, 
                 new Path(this.CountOutputLocation));
-        conf.setOutputKeyClass(IntWritable.class);
-        conf.setOutputValueClass(IntWritable.class);
 
         // Output type.
         conf.setOutputFormat(TextOutputFormat.class);
@@ -460,7 +462,7 @@ public class PageRank
                 String value = values.next().toString();
 
                 if (value.startsWith("!"))
-                    matrixString = value;
+                    matrixString = key + " " + value;
                 else
                     tempPR += Double.parseDouble(value);
             }
