@@ -4,10 +4,12 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.IOException;
 import java.lang.StringBuilder;
+import java.util.Comparator;
 import java.util.Iterator;
 import java.util.regex.*;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.PriorityQueue;
 
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -65,6 +67,8 @@ public class PageRank
     private String CountOutputLocation;
     // Temporary matrix output location.
     private String tempMatrixOutput;
+    // Output for the sorted PageRanks.
+    private String sortOutput;
 
     /**
      * Constructor for a PageRank job.
@@ -89,6 +93,8 @@ public class PageRank
         this.CountOutputLocation = this.bucketName + "/results/PageRank.n.out";
         // Temporary matrix input and output locations.
         this.tempMatrixOutput = this.bucketName + "/tmp/matrixOut";
+        // Output for the sorted PageRanks.
+        this.sortOutput = this.bucketName + "/results/";
     }
 
     /**
@@ -106,7 +112,8 @@ public class PageRank
         private Text value = new Text();
 
         // Match [a] and [a|b], in both cases returning 'a'.
-        private static Pattern pattern = Pattern.compile("\\[\\[([^\\]|]*)[^\\]]*\\]");
+        // Will not match [a:sd|f].
+        private static Pattern pattern = Pattern.compile("\\[\\[([^\\]|:]*)[^\\]]*\\]");
 
         // map(key, value, OutputCollector<KeyOut,ValueOut>)
         public void map(LongWritable keyIn, Text xml, 
@@ -551,6 +558,166 @@ public class PageRank
 
     }
 
+    /** 
+     * Mapper for the sort job.
+     * Input is 'page PageRank outLinks...'
+     * We only output values that are greater than the specified threshold.
+     * All values will have the same key so a single reducer can sort them.
+     * This is under the assumption that there are less than 100m pages.
+     */
+    public static class SortMapper extends MapReduceBase implements 
+        Mapper<LongWritable, Text, IntWritable, Text> 
+    {
+        public SortMapper(){}
+
+        private static final double threshold = 5 / NUM_PAGES_TOTAL;
+
+        // Key and values to be output.
+        // We want to group all the values together so we can sort them at a
+        // single reducer.
+        private final IntWritable key = new IntWritable(1);
+        private Text value = new Text();
+
+        // map(key, value, OutputCollector<KeyOut,ValueOut>)
+        public void map(LongWritable keyIn, Text line, 
+                OutputCollector<IntWritable, Text> output, 
+                Reporter reporter) throws IOException 
+        {
+            String[] tokens = line.toString().split(" ");
+
+            if (Double.parseDouble(tokens[1]) >= threshold)
+            {
+                value.set(tokens[0] + " " + tokens[1]);
+                output.collect(key, value);
+            }
+
+        }
+    }
+
+    /**
+     * Reducer for the sort job.
+     * All the values should have the same key, so this reducer can sort them
+     * all at once.
+     */
+    public static class SortReducer extends MapReduceBase implements
+        Reducer<IntWritable, Text, Text, Text> 
+    {
+        public SortReducer(){}
+
+        /** 
+         * Holds a page title and its corresponding PageRank value.
+         */
+        private class Pair
+        {
+            String title;
+            double pageRank;
+
+            public Pair(String title, double pageRank)
+            {
+                this.title = title;
+                this.pageRank = pageRank;
+            }
+
+            @Override
+            public String toString()
+            {
+                return this.title + "\t"  + this.pageRank;
+            }
+        }
+
+        /**
+         * Comparator for the PriorityQueue used to sort the elements.
+         */
+        public class PairComparator implements Comparator<Pair>
+        {
+            @Override
+            public int compare(Pair x, Pair y)
+            {
+                if (x.pageRank > y.pageRank)
+                    return -1;
+                else if (x.pageRank < y.pageRank)
+                    return 1;
+                else 
+                    return 0;
+            }
+        }
+
+        private Text outKey = new Text();
+        private final Text outVal = new Text("");
+
+        // reduce(KeyIn key, Iterator<ValueIn> values, 
+        // OutputCollector<KeyOut,ValueOut> output, Reporter reporter) 
+        public void reduce(IntWritable key, Iterator<Text> values, 
+                OutputCollector<Text, Text> output, 
+                Reporter reporter) throws IOException 
+        {
+            // Used to sort the Pairs.
+            PriorityQueue<Pair> queue = 
+                new PriorityQueue<Pair>(1000, new PairComparator());
+
+            // Insert all pairs into the queue.
+            while (values.hasNext())
+            {
+                String[] toks = values.next().toString().split(" ");
+                Pair pair = new Pair(toks[0], Double.parseDouble(toks[1]));
+                queue.add(pair);
+            }
+            
+            // Pop all and output.
+            while(!queue.isEmpty())
+            {
+                Pair pair = queue.poll();
+                outKey.set(pair.toString());
+                output.collect(outKey, outVal);
+            }
+        }
+    }
+
+
+    /**
+     * Configures and runs the job for sorting a PageRank iteration.
+     * @param i The iteration to sort.
+     */
+    public void sortIteration(int iter) throws IOException
+    {
+        // Configuration for this job.
+        JobConf conf = new JobConf(PageRank.class);
+        conf.setJobName("PageRankSort" + iter);
+
+        // Read from the ith Matrix output.
+        FileInputFormat.setInputPaths(conf, new Path(this.tempMatrixOutput + iter));
+
+        // Input type.
+        conf.setInputFormat(TextInputFormat.class);
+
+        // Mapper class.
+        conf.setMapperClass(SortMapper.class);
+
+        // Reducer class.
+        conf.setReducerClass(SortReducer.class);
+        conf.setNumReduceTasks(1);
+ 
+        // Output configuration.
+        FileOutputFormat.setOutputPath(conf,  
+                new Path(this.sortOutput +  "PageRank.iter" + iter + ".out"));
+        conf.setOutputKeyClass(Text.class);
+        conf.setOutputValueClass(Text.class);
+
+        // Output type.
+        conf.setOutputFormat(TextOutputFormat.class);
+
+        JobClient.runJob(conf);
+    }
+
+    /**
+     * Sorts the first and last PageRank iterations.
+     */
+    public void sort() throws IOException
+    {
+        sortIteration(1);
+        sortIteration(NUM_PAGERANK_ITERS);
+    }
+
     /**
      * Run the PageRank algorithm.
      *
@@ -577,6 +744,7 @@ public class PageRank
         pagerank.calculatePageRank();
 
         // TODO Sort PageRank.
+        pagerank.sort();
 
     }
 }
