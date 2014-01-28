@@ -700,7 +700,7 @@ public class PageRank
         // Output configuration.
         FileOutputFormat.setOutputPath(conf,  
                 new Path(this.sortOutput +  "PageRank.iter" + iter + ".out"));
-        conf.setOutputKeyClass(Text.class);
+        conf.setOutputKeyClass(IntWritable.class);
         conf.setOutputValueClass(Text.class);
 
         // Output type.
