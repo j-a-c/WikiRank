@@ -128,7 +128,7 @@ public class PageRank
             // Remove all spaces from the title.
             String title = Text.decode(xml.getBytes(), titleStart,
                     titleEnd-titleStart).replace(' ', '_');
-            value.set(title);
+            key.set(title);
 
             // Parse text body. This is where we will search for links.
             int bodyStart = xml.find("<text");
@@ -147,10 +147,10 @@ public class PageRank
             // Find the links.
             Matcher matcher = pattern.matcher(body);
 
-            // Output <outLink, currPage>
+            // Output <currPage, outlink>
             while(matcher.find())
             {
-                key.set(matcher.group(1).replace(' ', '_'));
+                value.set(matcher.group(1).replace(' ', '_'));
                 output.collect(key, value);
             }
         }
@@ -211,8 +211,8 @@ public class PageRank
 
          // Mapper class to parse XML.
         conf.setMapperClass(XMLMapper.class);
-        conf.setCombinerClass(XMLReducer.class);
-        conf.setReducerClass(XMLReducer.class);
+        //conf.setCombinerClass(XMLReducer.class);
+        //conf.setReducerClass(XMLReducer.class);
  
         // Output configuration.
         FileOutputFormat.setOutputPath(conf, new Path(XMLoutputLocation));
@@ -366,7 +366,7 @@ public class PageRank
     }
 
     /**
-     * For each "page OutgoingLinksText" produces the following output:
+     * For each "page OutgoingLinks..." produces the following output:
      *      <outLink, contribution>
      *          This output can be used to calculate the PageRank of outLink in
      *          the Reducer.
