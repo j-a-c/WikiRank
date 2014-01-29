@@ -389,7 +389,7 @@ public class PageRank
             {
                 // Calculate the PageRank contribution from the parent.
                 int numLinks = tokens.length - 1;
-                double parentPR = 1.0;
+                double parentPR = 1.0 / NUM_PAGES_TOTAL;
                 String contribution = String.valueOf(parentPR / numLinks);
 
                 for (int index = 1; index < tokens.length; index++)
