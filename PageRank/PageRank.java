@@ -37,9 +37,11 @@ import PageRank.XmlInputFormat;
  */
 public class PageRank 
 {
-    // TODO Set to 8.
+    // Are we in debug mode?
+    private static final boolean DEBUG = true;
+
     // The number of iterations to run the PageRank algorithm.
-    private static final int NUM_PAGERANK_ITERS = 2;
+    private static int NUM_PAGERANK_ITERS;
 
     // The number of pages total in the PageRank matrix.
     // Needs to be set before calculating the PageRank.
@@ -77,13 +79,19 @@ public class PageRank
      */
     public PageRank(String bucketName)
     {
-        // TODO Uncomment for submission. And test.
-        // this.bucketName = "s3n://" + bucketName;
-        // this.XMLinputLocation = "s3://spring-2014-ds/data/enwiki-latest-pages-articles.xml";
-        
-        // TODO Delete the two below here before submission!
-        this.bucketName = "hdfs://localhost:54310/" + bucketName;
-        this.XMLinputLocation = "/wiki-pages.xml";
+        // Some mode specific parameters.
+        if (!DEBUG)
+        {
+            this.bucketName = "s3n://" + bucketName;
+            this.XMLinputLocation = "s3://spring-2014-ds/data/enwiki-latest-pages-articles.xml";
+            this.NUM_PAGERANK_ITERS = 8;
+        }
+        else
+        {
+            this.bucketName = "hdfs://localhost:54310/" + bucketName;
+            this.XMLinputLocation = "/wiki-pages.xml";
+            this.NUM_PAGERANK_ITERS = 2;
+        }
 
         // Keep the file paths below.
         // Output for the parsed XML.
