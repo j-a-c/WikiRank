@@ -614,7 +614,7 @@ public class PageRank
     {
         public SortMapper(){}
 
-        private static final double threshold = 5 / NUM_PAGES_TOTAL;
+        private static final double threshold = 5.0 / NUM_PAGES_TOTAL;
 
         // Key and values to be output.
         // We want to group all the values together so we can sort them at a
