@@ -234,13 +234,13 @@ public class PageRank
     }
 
     /**
-     * Maps each page to <1,PageTitle>.
+     * Maps each page to <1,1>.
      * This mapper will be receiving the output produced from parseXML();
      * The input will be of the form "pageTitle link1 link2...".
-     * We split the input by whitespace and output each token.
+     * We produce a token for each pageTitle.
      */
     public static class CountMapper extends MapReduceBase implements 
-        Mapper<LongWritable, Text, IntWritable, Text> 
+        Mapper<LongWritable, Text, IntWritable, IntWritable> 
     {
         // We will use this to group all the pages.
         private final static IntWritable one = new IntWritable(1);
@@ -251,51 +251,47 @@ public class PageRank
 
         // map(key, value, OutputCollector<KeyOut,ValueOut>)
         public void map(LongWritable keyIn, Text pageStats, 
-                OutputCollector<IntWritable, Text> output, 
+                OutputCollector<IntWritable, IntWritable> output, 
                 Reporter reporter) throws IOException 
         {
-            for (String page : pageStats.toString().split(WHITESPACE))
-            {
-                outVal.set(page);
-                output.collect(one, outVal);
-            }
+            output.collect(one, one);
         }
     }
 
    /**
-     * Only outputs the unique links from the CountMapper.
-     * Receives the output of CountMapper.
-     * Now, there shuffle/sort step will be smaller. 
-     *
-     * Reducer<KeyIn, ValueIn, KeyOut, ValueOut>
-     */
+    * Adds the output from this mapper.
+    * Receives the output of CountMapper.
+    * Now, there shuffle/sort step will be smaller. 
+    * Outputs <1, totalPagesFromMapper>.
+    *
+    * Reducer<KeyIn, ValueIn, KeyOut, ValueOut>
+    */
     public static class CountCombiner extends MapReduceBase implements
-        Reducer<IntWritable, Text, IntWritable, Text> 
+        Reducer<IntWritable, IntWritable, IntWritable, IntWritable> 
     {
         // We will use this to group all the pages at the reducer.
         private final static IntWritable one = new IntWritable(1);
 
-        private Text outVal = new Text();
+        private IntWritable outVal = new IntWritable();
 
         public CountCombiner(){}
 
         // reduce(KeyIn key, Iterator<ValueIn> values, 
         // OutputCollector<KeyOut,ValueOut> output, Reporter reporter) 
-        public void reduce(IntWritable key, Iterator<Text> values, 
-                OutputCollector<IntWritable, Text> output, 
+        public void reduce(IntWritable key, Iterator<IntWritable> values, 
+                OutputCollector<IntWritable, IntWritable> output, 
                 Reporter reporter) throws IOException 
         {
-            HashSet<String> uniques = new HashSet<String>();
+            int count = 0;
             while (values.hasNext())
             {
-                uniques.add(values.next().toString());
+                count++;
+                values.next();
             }
+
+            outVal.set(count);
+            output.collect(one, outVal);
     
-            for (String unique : uniques)
-            {
-                outVal.set(unique);
-                output.collect(one, outVal); 
-            }
         }
     }
 
@@ -310,7 +306,7 @@ public class PageRank
      * Reducer<KeyIn, ValueIn, KeyOut, ValueOut>
      */
     public static class CountReducer extends MapReduceBase implements
-        Reducer<IntWritable, Text, Text, Text> 
+        Reducer<IntWritable, IntWritable, Text, Text> 
     {
         private Text outKey = new Text();
         private final Text outVal = new Text("");
@@ -319,18 +315,18 @@ public class PageRank
 
         // reduce(KeyIn key, Iterator<ValueIn> values, 
         // OutputCollector<KeyOut,ValueOut> output, Reporter reporter) 
-        public void reduce(IntWritable key, Iterator<Text> values, 
+        public void reduce(IntWritable key, Iterator<IntWritable> values, 
                 OutputCollector<Text, Text> output, 
                 Reporter reporter) throws IOException 
         {
 
-            HashSet<String> uniques = new HashSet<String>();
+            int count = 0;
             while (values.hasNext())
             {
-                uniques.add(values.next().toString());
+                count += values.next().get();
             }
 
-            outKey.set("N="+uniques.size());
+            outKey.set("N="+count);
             output.collect(outKey, outVal); 
         }
     }
@@ -338,6 +334,8 @@ public class PageRank
     /**
      * Counts the number of Wikipedia documents.
      * This job has one reduce step.
+     * The total number of pages is the total number of pages found from
+     * parsing the <title></title> tags.
      */
     public void countPages() throws IOException
     {
@@ -357,7 +355,7 @@ public class PageRank
         conf.setCombinerClass(CountCombiner.class);
 
         conf.setOutputKeyClass(IntWritable.class);
-        conf.setOutputValueClass(Text.class);
+        conf.setOutputValueClass(IntWritable.class);
 
         // We will only have one reducer so we can count all the pages.
         conf.setNumReduceTasks(1);
