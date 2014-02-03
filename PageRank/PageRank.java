@@ -121,7 +121,10 @@ public class PageRank
 
         // Match [a] and [a|b], in both cases returning 'a'.
         // Will not match [a:sd|f].
-        private static Pattern pattern = Pattern.compile("\\[\\[([^\\]|#:]*)[^\\]]*\\]");
+        //private static Pattern pattern = Pattern.compile("\\[\\[([^\\]|#:]*)[^\\]]*\\]");
+        // Returns whatever is in [[...]]. We still need to post-process this
+        // string.
+        private static Pattern pattern = Pattern.compile("\\[\\[([^\\]]*)\\]");
 
         // map(key, value, OutputCollector<KeyOut,ValueOut>)
         public void map(LongWritable keyIn, Text xml, 
@@ -158,7 +161,18 @@ public class PageRank
             // Output <currPage, outlink>
             while(matcher.find())
             {
+                // Raw link, we will need to post-process this.
                 String outlink = matcher.group(1).replace(' ', '_');
+
+                // Remove the pipe if it exists in the link.
+                int pipeIndex = outlink.indexOf('|');
+                if (pipeIndex != -1)
+                    outlink = outlink.substring(0, pipeIndex);
+
+                // Reject link if it contains ':' or '#'.
+                if (outlink.contains(":") || outlink.contains("#"))
+                    return;
+
                 // Do not count self-referential links.
                 if (!outlink.equals(title))
                 {
@@ -222,10 +236,10 @@ public class PageRank
         conf.set(XmlInputFormat.START_TAG_KEY, "<page>");
         conf.set(XmlInputFormat.END_TAG_KEY, "</page>");
 
-         // Mapper class to parse XML.
+         // Set classes to parse XML.
         conf.setMapperClass(XMLMapper.class);
-        //conf.setCombinerClass(XMLReducer.class);
-        //conf.setReducerClass(XMLReducer.class);
+        conf.setCombinerClass(XMLReducer.class);
+        conf.setReducerClass(XMLReducer.class);
  
         // Output configuration.
         FileOutputFormat.setOutputPath(conf, new Path(XMLoutputLocation));
