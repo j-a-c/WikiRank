@@ -121,7 +121,7 @@ public class PageRank
 
         // Match [a] and [a|b], in both cases returning 'a'.
         // Will not match [a:sd|f].
-        private static Pattern pattern = Pattern.compile("\\[\\[([^\\]|:]*)[^\\]]*\\]");
+        private static Pattern pattern = Pattern.compile("\\[\\[([^\\]|#:]*)[^\\]]*\\]");
 
         // map(key, value, OutputCollector<KeyOut,ValueOut>)
         public void map(LongWritable keyIn, Text xml, 
