@@ -133,7 +133,7 @@ public class PageRank
             int titleEnd = xml.find("</title>", titleStart);
             titleStart += 7; // Get outside of tag.
 
-            // Remove all spaces from the title.
+            // Remove all spaces from the title and set it as the key.
             String title = Text.decode(xml.getBytes(), titleStart,
                     titleEnd-titleStart).replace(' ', '_');
             key.set(title);
@@ -158,8 +158,13 @@ public class PageRank
             // Output <currPage, outlink>
             while(matcher.find())
             {
-                value.set(matcher.group(1).replace(' ', '_'));
-                output.collect(key, value);
+                String outlink = matcher.group(1).replace(' ', '_');
+                // Do not count self-referential links.
+                if (!outlink.equals(title))
+                {
+                    value.set(outlink);
+                    output.collect(key, value);
+                }
             }
         }
     }
