@@ -65,7 +65,7 @@ public class PageRank
     private String XMLoutputLocation;
     // Input location for the job that counts the number of pages.
     private String CountInputLocation;
-    // Output location for the job that counts the number of pages.
+    // Output location and name for the job that counts the number of pages.
     private String CountOutputLocation;
     // Temporary matrix output location.
     private String tempMatrixOutput;
@@ -98,8 +98,7 @@ public class PageRank
         this.XMLoutputLocation = this.bucketName + "/results/PageRank.outlink.out";
         // Input and output location for the count job.
         this.CountInputLocation = this.XMLoutputLocation;
-        this.CountOutputLocation = this.bucketName + "/results/";
-        this.CountOutputName = "PageRank.n.out";
+        this.CountOutputLocation = this.bucketName + "/results/PageRank.n.out";
         // Temporary matrix input and output locations.
         this.tempMatrixOutput = this.bucketName + "/tmp/matrixOut";
         // Output for the sorted PageRanks.
@@ -384,7 +383,6 @@ public class PageRank
         // Output configuration.
         FileOutputFormat.setOutputPath(conf, 
                 new Path(this.CountOutputLocation));
-        FileOutputFormat.setOutputName(conf, this.CountOutputName);
 
         // Output type.
         conf.setOutputFormat(TextOutputFormat.class);
@@ -544,7 +542,7 @@ public class PageRank
         // Set the total number of links.
         try
         {
-            Path pt = new Path(this.CountOutputLocation + this.CountOutputName);
+            Path pt = new Path(this.CountOutputLocation);
             FileSystem fs = FileSystem.get(new Configuration());
             BufferedReader br = new BufferedReader(new InputStreamReader(fs.open(pt)));
             String line = br.readLine();
@@ -764,6 +762,11 @@ public class PageRank
         sortIteration(NUM_PAGERANK_ITERS);
     }
 
+    public void mergeOutput() throws IOException
+    {
+        // TODO
+    }
+
     /**
      * Run the PageRank algorithm.
      *
@@ -789,9 +792,11 @@ public class PageRank
         // Compute PageRank.
         pagerank.calculatePageRank();
 
-        // TODO Sort PageRank.
+        // Sort PageRank.
         pagerank.sort();
 
+        // Merge outputs
+        pagerank.mergeOutput();
     }
 }
 
