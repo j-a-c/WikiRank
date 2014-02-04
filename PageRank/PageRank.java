@@ -95,7 +95,7 @@ public class PageRank
 
         // Keep the file paths below.
         // Output for the parsed XML.
-        this.XMLoutputLocation = this.bucketName + "/results/PageRank.inlink.out";
+        this.XMLoutputLocation = this.bucketName + "/results/PageRank.outlink.out";
         // Input and output location for the count job.
         this.CountInputLocation = this.XMLoutputLocation;
         this.CountOutputLocation = this.bucketName + "/results/PageRank.n.out";
