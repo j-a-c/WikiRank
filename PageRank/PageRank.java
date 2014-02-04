@@ -57,11 +57,15 @@ public class PageRank
 
     // Whitespace tokenizer.
     private static final String WHITESPACE = "\\s+";
+    // Marker
+    private static final String MARKER = "!";
 
     // Bucket that we will be operating in.
     private String bucketName;
     // Input location for the Wikipedia XML dump.
     private String XMLinputLocation;
+    // Temporary output for creating the outlink graph.
+    private String XMLtempOutputLocation;
     // Output for the parsed Wikipedia XML dump.
     private String XMLoutputLocation;
     // Input location for the job that counts the number of pages.
@@ -97,6 +101,8 @@ public class PageRank
         }
 
         // Keep the file paths below.
+
+        this.XMLtempOutputLocation = this.bucketName + "/tmp/outlink.temp";
         // Output for the parsed XML.
         this.XMLoutputLocation = this.bucketName + "/tmp/PageRank.outlink.out";
         // Input and output location for the count job.
@@ -111,6 +117,8 @@ public class PageRank
 
     /**
      * Parses the Wikipedia XML input and outputs the link structure.
+     *
+     * For each page, output inlinks and a marker that the page exists.
      *
      * Mapper<KeyIn, ValueIn, KeyOut, ValueOut>
      */
@@ -143,7 +151,7 @@ public class PageRank
             // Remove all spaces from the title and set it as the key.
             String title = Text.decode(xml.getBytes(), titleStart,
                     titleEnd-titleStart).replace(' ', '_');
-            key.set(title);
+            value.set(title);
 
             // Parse text body. This is where we will search for links.
             int bodyStart = xml.find("<text");
@@ -178,17 +186,26 @@ public class PageRank
                     return;
 
                 // Do not count self-referential links.
+                // We are outputting the inlink graph.
                 if (!outlink.equals(title))
                 {
-                    value.set(outlink);
+                    key.set(outlink);
                     output.collect(key, value);
                 }
             }
+
+            // Output a market that this page exists.
+            key.set(title);
+            value.set(MARKER);
+            output.collect(key, value);
         }
     }
 
     /**
-     * Collects the pages that link the to key.
+     * Outputs a partial outlink graph if the page exists.
+     * If the page has no outgoing links, it will not be output.
+     *
+     * Output format is (child, parents...).
      *
      * Reducer<KeyIn, ValueIn, KeyOut, ValueOut>
      */
@@ -207,28 +224,130 @@ public class PageRank
                 OutputCollector<Text, Text> output, 
                 Reporter reporter) throws IOException 
         {
+            // The page does not exist until we find the marker.
+            boolean exists = false;
+
+            StringBuilder builder = new StringBuilder();
+
+            // Add all parent links to the value string.
+            // If the MARKER is the first entry, the next entry will be
+            // double-spaced, but that is ok since we split using WHITESPACE.
+            if (values.hasNext())
+            {
+                String value = values.next().toString();
+                if (value.equals(MARKER))
+                    exists = true;
+                else
+                    builder.append(value);
+            }
+            while (values.hasNext())
+            {
+                String value = values.next().toString();
+            
+                if (value.equals(MARKER))
+                    exists = true;
+                else
+                {
+                    builder.append(SPACE);
+                    builder.append(value);
+                }
+            }
+            
+            // Only output if the page exists.
+            if (exists)
+            {
+                outValue.set(builder.toString());
+                output.collect(key, outValue); 
+            }
+        }
+    }
+
+    /**
+     * Outputs pairs of (parent, child) links. These links definitely exist
+     * since they come from the previous job. The input is (child parents...).
+     * The input is an inlink graph. We are transforming it into an outlink graph.
+     */
+    public static class GraphMapper extends MapReduceBase implements 
+        Mapper<LongWritable, Text, Text, Text> 
+    {
+        public GraphMapper(){}
+
+        // Key and values to be output.
+        private Text key = new Text();
+        private Text value = new Text();
+
+        // map(key, value, OutputCollector<KeyOut,ValueOut>)
+        public void map(LongWritable keyIn, Text text, 
+                OutputCollector<Text, Text> output, 
+                Reporter reporter) throws IOException 
+        {
+            String[] tokens = text.toString().split(WHITESPACE);
+
+            // Set the child link.
+            value.set(tokens[0]);
+
+            // Output (parent, child). Skip the first entry in the array
+            // because it is the child link. 
+            for (int i = 1; i < tokens.length; i++)
+            {
+                key.set(tokens[i]);
+                output.collect(key, value);
+            }
+            
+            // Output (child, "") so we can still build pages that don't have
+            // outgoing links.
+            key.set("");
+            output.collect(value, key);
+        }
+    }
+
+    /**
+     * Creates the outlink graph given parts of the outlink graph row.
+     */
+    public static class GraphReducer extends MapReduceBase implements
+        Reducer<Text, Text, Text, Text> 
+    {
+        private static final char SPACE = ' ';
+
+        private Text outValue = new Text();
+
+        public GraphReducer(){}
+
+        // reduce(KeyIn key, Iterator<ValueIn> values, 
+        // OutputCollector<KeyOut,ValueOut> output, Reporter reporter) 
+        public void reduce(Text key, Iterator<Text> values, 
+                OutputCollector<Text, Text> output, 
+                Reporter reporter) throws IOException 
+        {
+
             StringBuilder builder = new StringBuilder();
 
             if (values.hasNext())
-                builder.append(values.next());
+            {
+                builder.append(values.next().toString());
+            }
             while (values.hasNext())
             {
                 builder.append(SPACE);
-                builder.append(values.next());
+                builder.append(values.next().toString());
             }
 
             outValue.set(builder.toString());
-            output.collect(key, outValue); 
+            output.collect(key, outValue);
         }
     }
 
     /**
      * Parses the Wikipedia XML format.
-     * This has Job has no Reduce step.
+     *
+     * Contains two jobs.
+     * The first creates a partial link structure for pages that exists. (i.e.
+     * removes the 'red links').
+     * The second job merges the link structure to create the whole graph.
      */
     public void parseXML() throws IOException
     {
-        // Configuration for this job.
+        // Configuration for the first job.
         JobConf conf = new JobConf(PageRank.class);
         conf.setJobName("PageRankParseXML");
 
@@ -242,11 +361,10 @@ public class PageRank
 
          // Set classes to parse XML.
         conf.setMapperClass(XMLMapper.class);
-        conf.setCombinerClass(XMLReducer.class);
         conf.setReducerClass(XMLReducer.class);
  
         // Output configuration.
-        FileOutputFormat.setOutputPath(conf, new Path(XMLoutputLocation));
+        FileOutputFormat.setOutputPath(conf, new Path(this.XMLtempOutputLocation));
         conf.setOutputKeyClass(Text.class);
         conf.setOutputValueClass(Text.class);
 
@@ -254,6 +372,32 @@ public class PageRank
         conf.setOutputFormat(TextOutputFormat.class);
 
         JobClient.runJob(conf);
+
+        // Configuration for the second job.
+        conf = new JobConf(PageRank.class);
+        conf.setJobName("PageRankCreateOutlinkGraph");
+
+        // Input location.
+        FileInputFormat.setInputPaths(conf, new Path(this.XMLtempOutputLocation));
+
+        // Input type.
+        conf.setInputFormat(TextInputFormat.class);
+
+         // Set classes to parse XML.
+        conf.setMapperClass(GraphMapper.class);
+        conf.setCombinerClass(GraphReducer.class);
+        conf.setReducerClass(GraphReducer.class);
+ 
+        // Output configuration.
+        FileOutputFormat.setOutputPath(conf, new Path(this.XMLoutputLocation));
+        conf.setOutputKeyClass(Text.class);
+        conf.setOutputValueClass(Text.class);
+
+        // Output type.
+        conf.setOutputFormat(TextOutputFormat.class);
+
+        JobClient.runJob(conf);
+
     }
 
     /**
