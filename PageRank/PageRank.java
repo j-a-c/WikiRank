@@ -66,8 +66,10 @@ public class PageRank
     private String XMLoutputLocation;
     // Input location for the job that counts the number of pages.
     private String CountInputLocation;
-    // Output location and name for the job that counts the number of pages.
+    // Output location for the job that counts the number of pages.
     private String CountOutputLocation;
+    // The final output location.
+    private String finalCountOutput;
     // Temporary matrix output location.
     private String tempMatrixOutput;
     // Output for the sorted PageRanks.
@@ -100,6 +102,7 @@ public class PageRank
         // Input and output location for the count job.
         this.CountInputLocation = this.XMLoutputLocation;
         this.CountOutputLocation = this.bucketName + "/tmp/PageRank.n.out";
+        this.finalCountOutput = this.bucketName + "/results/PageRank.n.out";
         // Temporary matrix input and output locations.
         this.tempMatrixOutput = this.bucketName + "/tmp/matrixOut";
         // Output for the sorted PageRanks.
@@ -389,6 +392,16 @@ public class PageRank
         conf.setOutputFormat(TextOutputFormat.class);
 
         JobClient.runJob(conf);
+
+        // We will merge and copy this output here since we will need it to
+        // calculate the PageRank.
+        // PageRank.n.out
+        Configuration config = new Configuration();
+        FileSystem fs = FileSystem.get(config);
+        Path src = new Path(this.CountOutputLocation);
+        Path dst = new Path(this.finalCountOutput);
+        FileUtil.copyMerge(fs, src, fs, dst, false, config, "");
+
     }
 
     /**
@@ -543,7 +556,7 @@ public class PageRank
         // Set the total number of links.
         try
         {
-            Path pt = new Path(this.CountOutputLocation);
+            Path pt = new Path(this.finalCountOutput);
             FileSystem fs = FileSystem.get(new Configuration());
             BufferedReader br = new BufferedReader(new InputStreamReader(fs.open(pt)));
             String line = br.readLine();
@@ -766,6 +779,7 @@ public class PageRank
     /**
      * Moves our output from the temporary location to the final locations.
      * This is needed because we are using an older version of Hadoop.
+     * PageRank.n.out should have been merged before the PageRank calculation.
      *
      *      results/PageRank.outlink.out
      *      results/PageRank.n.out
@@ -804,13 +818,6 @@ public class PageRank
         src = new Path(this.sortOutput + "PageRank.iter" + NUM_PAGERANK_ITERS + ".out");
         dst = new Path(this.bucketName + "/results/PageRank.iter" + NUM_PAGERANK_ITERS + ".out");
         FileUtil.copyMerge(fs, src, fs, dst, false, conf, "");
-
-        // PageRank.n.out
-        src = new Path(this.CountOutputLocation);
-        dst = new Path(this.bucketName + "/results/PageRank.n.out");
-        FileUtil.copyMerge(fs, src, fs, dst, false, conf, "");
-
-
     }
 
     /**
