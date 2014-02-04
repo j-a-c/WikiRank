@@ -11,6 +11,7 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.PriorityQueue;
 
+import org.apache.hadoop.fs.FileUtil;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.conf.*;
@@ -95,14 +96,14 @@ public class PageRank
 
         // Keep the file paths below.
         // Output for the parsed XML.
-        this.XMLoutputLocation = this.bucketName + "/results/PageRank.outlink.out";
+        this.XMLoutputLocation = this.bucketName + "/tmp/PageRank.outlink.out";
         // Input and output location for the count job.
         this.CountInputLocation = this.XMLoutputLocation;
-        this.CountOutputLocation = this.bucketName + "/results/PageRank.n.out";
+        this.CountOutputLocation = this.bucketName + "/tmp/PageRank.n.out";
         // Temporary matrix input and output locations.
         this.tempMatrixOutput = this.bucketName + "/tmp/matrixOut";
         // Output for the sorted PageRanks.
-        this.sortOutput = this.bucketName + "/results/";
+        this.sortOutput = this.bucketName + "/tmp/";
     }
 
     /**
@@ -762,9 +763,54 @@ public class PageRank
         sortIteration(NUM_PAGERANK_ITERS);
     }
 
+    /**
+     * Moves our output from the temporary location to the final locations.
+     * This is needed because we are using an older version of Hadoop.
+     *
+     *      results/PageRank.outlink.out
+     *      results/PageRank.n.out
+     *      results/PageRank.iter1.out (output file for iteration 1)
+     *      results/PageRank.iter8.out (output file for iteration 8)
+     */
     public void mergeOutput() throws IOException
     {
-        // TODO
+        //this.XMLoutputLocation = this.bucketName + "/tmp/PageRank.outlink.out";
+        // Input and output location for the count job.
+        this.CountInputLocation = this.XMLoutputLocation;
+        this.CountOutputLocation = this.bucketName + "/tmp/PageRank.n.out";
+        // Temporary matrix input and output locations.
+        this.tempMatrixOutput = this.bucketName + "/tmp/matrixOut";
+        // Output for the sorted PageRanks.
+        this.sortOutput = this.bucketName + "/tmp/";
+
+
+        Configuration conf = new Configuration();
+        FileSystem fs = FileSystem.get(conf);
+
+        Path src;
+        Path dst;
+
+        // Outlink graph
+        src = new Path(this.XMLoutputLocation);
+        dst = new Path(this.bucketName + "/results/PageRank.outlink.out");
+        FileUtil.copyMerge(fs, src, fs, dst, false, conf, "");
+
+        // iter1.out
+        src = new Path(this.sortOutput + "PageRank.iter" + 1 + ".out");
+        dst = new Path(this.bucketName + "/results/PageRank.iter" + 1 + ".out");
+        FileUtil.copyMerge(fs, src, fs, dst, false, conf, "");
+
+        // iterN.out
+        src = new Path(this.sortOutput + "PageRank.iter" + NUM_PAGERANK_ITERS + ".out");
+        dst = new Path(this.bucketName + "/results/PageRank.iter" + NUM_PAGERANK_ITERS + ".out");
+        FileUtil.copyMerge(fs, src, fs, dst, false, conf, "");
+
+        // PageRank.n.out
+        src = new Path(this.CountOutputLocation);
+        dst = new Path(this.bucketName + "/results/PageRank.n.out");
+        FileUtil.copyMerge(fs, src, fs, dst, false, conf, "");
+
+
     }
 
     /**
