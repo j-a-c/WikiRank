@@ -98,7 +98,8 @@ public class PageRank
         this.XMLoutputLocation = this.bucketName + "/results/PageRank.outlink.out";
         // Input and output location for the count job.
         this.CountInputLocation = this.XMLoutputLocation;
-        this.CountOutputLocation = this.bucketName + "/results/PageRank.n.out";
+        this.CountOutputLocation = this.bucketName + "/results/";
+        this.CountOutputName = "PageRank.n.out";
         // Temporary matrix input and output locations.
         this.tempMatrixOutput = this.bucketName + "/tmp/matrixOut";
         // Output for the sorted PageRanks.
@@ -383,6 +384,7 @@ public class PageRank
         // Output configuration.
         FileOutputFormat.setOutputPath(conf, 
                 new Path(this.CountOutputLocation));
+        FileOutputFormat.setOutputName(conf, this.CountOutputName);
 
         // Output type.
         conf.setOutputFormat(TextOutputFormat.class);
@@ -542,7 +544,7 @@ public class PageRank
         // Set the total number of links.
         try
         {
-            Path pt = new Path(this.CountOutputLocation + "/part-00000");
+            Path pt = new Path(this.CountOutputLocation + this.CountOutputName);
             FileSystem fs = FileSystem.get(new Configuration());
             BufferedReader br = new BufferedReader(new InputStreamReader(fs.open(pt)));
             String line = br.readLine();
