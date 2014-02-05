@@ -28,10 +28,10 @@ import PageRank.XmlInputFormat;
  * Output format:
  *
  * your-bucket-name
- *      results/PageRank.inlink.out
+ *      results/PageRank.outlink.out
  *      results/PageRank.n.out
  *      results/PageRank.iter1.out (output file for iteration 1)
- *      results/PageRank.iter8.out (output file for iteration 8)
+ *      results/PageRank.iterN.out (output file for iteration N)
  *      logs/ (the job log direcotry)
  *      job/PageRank.jar (job jar)
  *      tmp/ (temporary files) 
@@ -40,6 +40,9 @@ public class PageRank
 {
     // Are we in debug mode?
     private static final boolean DEBUG = true;
+
+    // Should we delete temporary files?
+    private static final boolean DELETETEMP = false;
 
     // The number of iterations to run the PageRank algorithm.
     private static int NUM_PAGERANK_ITERS;
@@ -544,7 +547,7 @@ public class PageRank
         FileSystem fs = FileSystem.get(config);
         Path src = new Path(this.CountOutputLocation);
         Path dst = new Path(this.finalCountOutput);
-        FileUtil.copyMerge(fs, src, fs, dst, false, config, "");
+        FileUtil.copyMerge(fs, src, fs, dst, DELETETEMP, config, "");
 
     }
 
@@ -951,17 +954,17 @@ public class PageRank
         // Outlink graph
         src = new Path(this.XMLoutputLocation);
         dst = new Path(this.bucketName + "/results/PageRank.outlink.out");
-        FileUtil.copyMerge(fs, src, fs, dst, false, conf, "");
+        FileUtil.copyMerge(fs, src, fs, dst, DELETETEMP, conf, "");
 
         // iter1.out
         src = new Path(this.sortOutput + "PageRank.iter" + 1 + ".out");
         dst = new Path(this.bucketName + "/results/PageRank.iter" + 1 + ".out");
-        FileUtil.copyMerge(fs, src, fs, dst, false, conf, "");
+        FileUtil.copyMerge(fs, src, fs, dst, DELETETEMP, conf, "");
 
         // iterN.out
         src = new Path(this.sortOutput + "PageRank.iter" + NUM_PAGERANK_ITERS + ".out");
         dst = new Path(this.bucketName + "/results/PageRank.iter" + NUM_PAGERANK_ITERS + ".out");
-        FileUtil.copyMerge(fs, src, fs, dst, false, conf, "");
+        FileUtil.copyMerge(fs, src, fs, dst, DELETETEMP, conf, "");
     }
 
     /**
