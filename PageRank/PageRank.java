@@ -42,7 +42,7 @@ import PageRank.XmlInputFormat;
 public class PageRank 
 {
     // Are we in debug mode?
-    private static final boolean DEBUG = true;
+    private static final boolean DEBUG = false;
 
     // Should we delete temporary files?
     private static final boolean DELETETEMP = false;
