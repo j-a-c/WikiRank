@@ -4,6 +4,9 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.IOException;
 import java.lang.StringBuilder;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.regex.*;
@@ -93,7 +96,7 @@ public class PageRank
         if (!DEBUG)
         {
             this.bucketName = "s3n://" + bucketName;
-            this.XMLinputLocation = "s3://spring-2014-ds/data/enwiki-latest-pages-articles.xml";
+            this.XMLinputLocation = "s3n://spring-2014-ds/data/enwiki-latest-pages-articles.xml";
             this.NUM_PAGERANK_ITERS = 8;
         }
         else
@@ -507,7 +510,7 @@ public class PageRank
      * The total number of pages is the total number of pages found from
      * parsing the <title></title> tags.
      */
-    public void countPages() throws IOException
+    public void countPages() throws IOException, URISyntaxException
     {
         // Configuration for this job.
         JobConf conf = new JobConf(PageRank.class);
@@ -541,10 +544,16 @@ public class PageRank
         JobClient.runJob(conf);
 
         // We will merge and copy this output here since we will need it to
-        // calculate the PageRank.
-        // PageRank.n.out
+        // calculate the PageRank. (PageRank.n.out)
         Configuration config = new Configuration();
-        FileSystem fs = FileSystem.get(config);
+
+        // If we are running in AWS, we need to configure the FileSystem.
+        FileSystem fs;
+        if (DEBUG)
+            fs = FileSystem.get(config);
+        else
+            fs = FileSystem.get(new URI(this.bucketName), config);
+
         Path src = new Path(this.CountOutputLocation);
         Path dst = new Path(this.finalCountOutput);
         FileUtil.copyMerge(fs, src, fs, dst, DELETETEMP, config, "");
@@ -704,7 +713,14 @@ public class PageRank
         try
         {
             Path pt = new Path(this.finalCountOutput);
-            FileSystem fs = FileSystem.get(new Configuration());
+            // We need to get the correct FileSystem.
+            Configuration config = new Configuration();
+            FileSystem fs;
+            if (DEBUG)
+                fs = FileSystem.get(config);
+            else
+                fs = FileSystem.get(new URI(this.bucketName), config);
+
             BufferedReader br = new BufferedReader(new InputStreamReader(fs.open(pt)));
             String line = br.readLine();
             line = line.substring(NUM_PAGES_TOTAL_START);
@@ -767,34 +783,89 @@ public class PageRank
      * Mapper for the sort job.
      * Input is 'page PageRank outLinks...'
      * We only output values that are greater than the specified threshold.
-     * All values will have the same key so a single reducer can sort them.
-     * This is under the assumption that there are less than 100m pages.
+     *
+     * Output ("page PageRank", "page PageRank")
      */
     public static class SortMapper extends MapReduceBase implements 
-        Mapper<LongWritable, Text, IntWritable, Text> 
+        Mapper<LongWritable, Text, Text, Text> 
     {
         public SortMapper(){}
 
         private static final double threshold = 5.0 / NUM_PAGES_TOTAL;
 
-        // Key and values to be output.
-        // We want to group all the values together so we can sort them at a
-        // single reducer.
-        private final IntWritable key = new IntWritable(1);
-        private Text value = new Text();
+        private Text key = new Text();
+        private static final Text value = new Text("");
 
         // map(key, value, OutputCollector<KeyOut,ValueOut>)
         public void map(LongWritable keyIn, Text line, 
-                OutputCollector<IntWritable, Text> output, 
+                OutputCollector<Text, Text> output, 
                 Reporter reporter) throws IOException 
         {
             String[] tokens = line.toString().split(" ");
 
             if (Double.parseDouble(tokens[1]) >= threshold)
             {
-                value.set(tokens[0] + " " + tokens[1]);
+                key.set(tokens[0] + "\t" + tokens[1]);
+                value.set(tokens[0] + "\t" + tokens[1]);
                 output.collect(key, value);
             }
+
+        }
+    }
+
+    /**
+     * Marks all inputs as equal.
+     */
+    public static class EqualComparator implements RawComparator<Text>
+    {
+        public EqualComparator(){}
+            
+        @Override
+        public int compare(byte[] b1, int s1, int l1, byte[] b2, int s2, int l2)
+        {
+            return 0;
+        }
+
+        @Override
+        public int compare(Text t1, Text t2)
+        {
+            return 0;
+        }
+    }
+
+
+    /**
+     * A comparator to sort the reduce key before they given to the
+     * SortReducer.
+     *
+     * t1 and t2 are Texts containing "page PageRank".
+     * PageRank will be sorted in descending order.
+     */
+    public static class SortComparator implements RawComparator<Text>
+    {
+        public SortComparator(){}
+        
+        @Override
+        public int compare(byte[] b1, int s1, int l1, byte[] b2, int s2, int l2)
+        {
+
+            // Text contains an extra byte.
+            String str1 = new String(Arrays.copyOfRange(b1, s1+1, s1+l1));
+            String str2 = new String(Arrays.copyOfRange(b2, s2+1, s2+l2));
+
+            Double d1 = Double.parseDouble(str1.split(WHITESPACE)[1]);
+            Double d2 = Double.parseDouble(str2.split(WHITESPACE)[1]);
+
+            return -1 * d1.compareTo(d2);
+        }
+
+        @Override
+        public int compare(Text t1, Text t2)
+        {
+            return -1 * new Double(Double.parseDouble( 
+                    t1.toString().split(WHITESPACE)[1]
+                    )).compareTo(
+                        Double.parseDouble(t2.toString().split(WHITESPACE)[1]));
 
         }
     }
@@ -805,74 +876,23 @@ public class PageRank
      * all at once.
      */
     public static class SortReducer extends MapReduceBase implements
-        Reducer<IntWritable, Text, Text, Text> 
+        Reducer<Text, Text, Text, Text> 
     {
         public SortReducer(){}
 
-        /** 
-         * Holds a page title and its corresponding PageRank value.
-         */
-        private class Pair
-        {
-            String title;
-            double pageRank;
-
-            public Pair(String title, double pageRank)
-            {
-                this.title = title;
-                this.pageRank = pageRank;
-            }
-
-            @Override
-            public String toString()
-            {
-                return this.title + "\t"  + this.pageRank;
-            }
-        }
-
-        /**
-         * Comparator for the PriorityQueue used to sort the elements.
-         */
-        public class PairComparator implements Comparator<Pair>
-        {
-            @Override
-            public int compare(Pair x, Pair y)
-            {
-                if (x.pageRank > y.pageRank)
-                    return -1;
-                else if (x.pageRank < y.pageRank)
-                    return 1;
-                else 
-                    return 0;
-            }
-        }
-
-        private Text outKey = new Text();
+        private Text outKey = new Text("");
         private final Text outVal = new Text("");
 
         // reduce(KeyIn key, Iterator<ValueIn> values, 
         // OutputCollector<KeyOut,ValueOut> output, Reporter reporter) 
-        public void reduce(IntWritable key, Iterator<Text> values, 
+        public void reduce(Text key, Iterator<Text> values, 
                 OutputCollector<Text, Text> output, 
                 Reporter reporter) throws IOException 
         {
-            // Used to sort the Pairs.
-            PriorityQueue<Pair> queue = 
-                new PriorityQueue<Pair>(1000, new PairComparator());
-
             // Insert all pairs into the queue.
             while (values.hasNext())
             {
-                String[] toks = values.next().toString().split(" ");
-                Pair pair = new Pair(toks[0], Double.parseDouble(toks[1]));
-                queue.add(pair);
-            }
-            
-            // Pop all and output.
-            while(!queue.isEmpty())
-            {
-                Pair pair = queue.poll();
-                outKey.set(pair.toString());
+                outKey.set(values.next().toString());
                 output.collect(outKey, outVal);
             }
         }
@@ -898,6 +918,11 @@ public class PageRank
         // Mapper class.
         conf.setMapperClass(SortMapper.class);
 
+        // Mark all keys as equal.
+        conf.setOutputValueGroupingComparator(EqualComparator.class);
+        // Sort the keys.
+        conf.setOutputKeyComparatorClass(SortComparator.class);
+
         // Reducer class.
         conf.setReducerClass(SortReducer.class);
         conf.setNumReduceTasks(1);
@@ -905,7 +930,7 @@ public class PageRank
         // Output configuration.
         FileOutputFormat.setOutputPath(conf,  
                 new Path(this.sortOutput +  "PageRank.iter" + iter + ".out"));
-        conf.setOutputKeyClass(IntWritable.class);
+        conf.setOutputKeyClass(Text.class);
         conf.setOutputValueClass(Text.class);
 
         // Output type.
@@ -933,7 +958,7 @@ public class PageRank
      *      results/PageRank.iter1.out (output file for iteration 1)
      *      results/PageRank.iter8.out (output file for iteration 8)
      */
-    public void mergeOutput() throws IOException
+    public void mergeOutput() throws IOException, URISyntaxException
     {
         //this.XMLoutputLocation = this.bucketName + "/tmp/PageRank.outlink.out";
         // Input and output location for the count job.
@@ -945,8 +970,14 @@ public class PageRank
         this.sortOutput = this.bucketName + "/tmp/";
 
 
-        Configuration conf = new Configuration();
-        FileSystem fs = FileSystem.get(conf);
+        Configuration config = new Configuration();
+
+        // We need to configure the FileSystem if we are accessing from AWS.
+        FileSystem fs;
+        if (DEBUG)
+            fs = FileSystem.get(config);
+        else
+            fs = FileSystem.get(new URI(this.bucketName), config);
 
         Path src;
         Path dst;
@@ -954,17 +985,17 @@ public class PageRank
         // Outlink graph
         src = new Path(this.XMLoutputLocation);
         dst = new Path(this.bucketName + "/results/PageRank.outlink.out");
-        FileUtil.copyMerge(fs, src, fs, dst, DELETETEMP, conf, "");
+        FileUtil.copyMerge(fs, src, fs, dst, DELETETEMP, config, "");
 
         // iter1.out
         src = new Path(this.sortOutput + "PageRank.iter" + 1 + ".out");
         dst = new Path(this.bucketName + "/results/PageRank.iter" + 1 + ".out");
-        FileUtil.copyMerge(fs, src, fs, dst, DELETETEMP, conf, "");
+        FileUtil.copyMerge(fs, src, fs, dst, DELETETEMP, config, "");
 
         // iterN.out
         src = new Path(this.sortOutput + "PageRank.iter" + NUM_PAGERANK_ITERS + ".out");
         dst = new Path(this.bucketName + "/results/PageRank.iter" + NUM_PAGERANK_ITERS + ".out");
-        FileUtil.copyMerge(fs, src, fs, dst, DELETETEMP, conf, "");
+        FileUtil.copyMerge(fs, src, fs, dst, DELETETEMP, config, "");
     }
 
     /**
