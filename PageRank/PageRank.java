@@ -157,6 +157,11 @@ public class PageRank
             // Remove all spaces from the title and set it as the key.
             String title = Text.decode(xml.getBytes(), titleStart,
                     titleEnd-titleStart).replace(' ', '_');
+
+            // Reject page if it contains ':' or '#' or '/'.
+            if (title.contains(":") || title.contains("#") || title.contains("/"))
+                    return;
+
             value.set(title);
 
             // Parse text body. This is where we will search for links.
@@ -187,8 +192,8 @@ public class PageRank
                 if (pipeIndex != -1)
                     outlink = outlink.substring(0, pipeIndex);
 
-                // Reject link if it contains ':' or '#'.
-                if (outlink.contains(":") || outlink.contains("#"))
+                // Reject link if it contains ':' or '#' or '/'.
+                if (outlink.contains(":") || outlink.contains("#") || outlink.contains("/"))
                     return;
 
                 // Do not count self-referential links.
