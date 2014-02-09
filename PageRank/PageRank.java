@@ -65,7 +65,7 @@ public class PageRank
 
     // Whitespace tokenizer.
     private static final String WHITESPACE = "\\s+";
-    // Marker
+    // Marker - must be one of the symbols that we do not allow.
     private static final String MARKER = ":";
 
     // Bucket that we will be operating in.
@@ -613,7 +613,7 @@ public class PageRank
      *      <outLink, contribution>
      *          This output can be used to calculate the PageRank of outLink in
      *          the Reducer.
-     *      <in, '! origLinks'>.
+     *      <in, MARKER origLinks'>.
      *          This output can be used to calculate the new PageRank matrix
      *          (once the PageRank for the in page is calculated). The first
      *          character of input value to the reducer will be '!' so the
