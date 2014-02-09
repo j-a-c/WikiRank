@@ -41,7 +41,7 @@ import PageRank.XmlInputFormat;
 public class PageRank 
 {
     // Are we in debug mode?
-    private static final boolean DEBUG = true;
+    private static final boolean DEBUG = false;
 
     // Should we delete temporary files?
     private static final boolean DELETETEMP = false;
@@ -105,7 +105,7 @@ public class PageRank
         {
             this.bucketName = "hdfs://localhost:54310/" + bucketName;
             this.XMLinputLocation = "/test.xml";
-            this.NUM_PAGERANK_ITERS = 2;
+            this.NUM_PAGERANK_ITERS = 3;
         }
 
         // Keep the file paths below.
@@ -699,6 +699,12 @@ public class PageRank
         public void configure(JobConf conf) 
         {
             NUM_PAGES_TOTAL = Integer.parseInt(conf.get("NUM_PAGES_TOTAL"));
+
+            int currIter = Integer.parseInt(conf.get("currIter"));
+            if (currIter == 1)
+                firstIteration = true;
+            else 
+                firstIteration = false;
         }
 
     }
@@ -808,12 +814,13 @@ public class PageRank
             // Output type.
             conf.setOutputFormat(TextOutputFormat.class);
 
+            // Set the number of pages total
             conf.set("NUM_PAGES_TOTAL", String.valueOf(NUM_PAGES_TOTAL));
+            // Set the current interation.
+            conf.set("currIter", String.valueOf(i));
 
             JobClient.runJob(conf);
             
-            // Set the first iteration marker to false.
-            PageRankMapper.firstIteration = false;
         }
 
     }
