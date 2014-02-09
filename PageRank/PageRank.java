@@ -41,7 +41,7 @@ import PageRank.XmlInputFormat;
 public class PageRank 
 {
     // Are we in debug mode?
-    private static final boolean DEBUG = false;
+    private static final boolean DEBUG = true;
 
     // Should we delete temporary files?
     private static final boolean DELETETEMP = false;
@@ -66,7 +66,7 @@ public class PageRank
     // Whitespace tokenizer.
     private static final String WHITESPACE = "\\s+";
     // Marker
-    private static final String MARKER = "!";
+    private static final String MARKER = ":";
 
     // Bucket that we will be operating in.
     private static String bucketName;
@@ -104,7 +104,7 @@ public class PageRank
         else
         {
             this.bucketName = "hdfs://localhost:54310/" + bucketName;
-            this.XMLinputLocation = "/wiki-pages.xml";
+            this.XMLinputLocation = "/test.xml";
             this.NUM_PAGERANK_ITERS = 2;
         }
 
@@ -240,7 +240,7 @@ public class PageRank
             // The page does not exist until we find the marker.
             boolean exists = false;
 
-            StringBuilder builder = new StringBuilder();
+            StringBuilder builder = new StringBuilder(SPACE);
 
             // Add all parent links to the value string.
             // If the MARKER is the first entry, the next entry will be
@@ -385,6 +385,10 @@ public class PageRank
         conf.setOutputFormat(TextOutputFormat.class);
 
         JobClient.runJob(conf);
+        
+        /*
+         * Second Job.
+         */
 
         // Configuration for the second job.
         conf = new JobConf(PageRank.class);
@@ -639,7 +643,7 @@ public class PageRank
 
             // Will be used for the second type of output.
             StringBuilder builder = new StringBuilder();
-            builder.append('!');
+            builder.append(MARKER);
             builder.append(' ');
 
             // Output the first type of output.
@@ -733,7 +737,7 @@ public class PageRank
             {
                 String value = values.next().toString();
 
-                if (value.startsWith("!"))
+                if (value.startsWith(MARKER))
                     matrixString = key + " " + value;
                 else
                     tempPR += Double.parseDouble(value);
@@ -747,7 +751,7 @@ public class PageRank
             }
             else
             {
-                matrixString = matrixString.replace("!", String.valueOf(finalPR));
+                matrixString = matrixString.replace(MARKER, String.valueOf(finalPR));
             }
 
             outKey.set(matrixString);
