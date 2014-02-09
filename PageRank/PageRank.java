@@ -14,10 +14,9 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.PriorityQueue;
 
-import org.apache.hadoop.fs.FileUtil;
-import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.conf.*;
+import org.apache.hadoop.fs.*;
+import org.apache.hadoop.fs.s3.*;
 import org.apache.hadoop.io.*;
 import org.apache.hadoop.mapred.*;
 import org.apache.hadoop.util.*;
@@ -52,7 +51,10 @@ public class PageRank
 
     // The number of pages total in the PageRank matrix.
     // Needs to be set before calculating the PageRank.
-    private static int NUM_PAGES_TOTAL;
+    // We mark it as NOT_SET since distributed instances may need to
+    // instantiate this value themselves.
+    private static final int NOT_SET = 0;
+    private static int NUM_PAGES_TOTAL = NOT_SET;
     // This is the start index of NUM_PAGES_TOTAL in the file.
     // See CountReducer for the output format.
     private static final int NUM_PAGES_TOTAL_START = 2; 
@@ -67,7 +69,7 @@ public class PageRank
     private static final String MARKER = "!";
 
     // Bucket that we will be operating in.
-    private String bucketName;
+    private static String bucketName;
     // Input location for the Wikipedia XML dump.
     private String XMLinputLocation;
     // Temporary output for creating the outlink graph.
@@ -79,7 +81,7 @@ public class PageRank
     // Output location for the job that counts the number of pages.
     private String CountOutputLocation;
     // The final output location.
-    private String finalCountOutput;
+    private static String finalCountOutput;
     // Temporary matrix output location.
     private String tempMatrixOutput;
     // Output for the sorted PageRanks.
@@ -563,6 +565,43 @@ public class PageRank
         Path dst = new Path(this.finalCountOutput);
         FileUtil.copyMerge(fs, src, fs, dst, DELETETEMP, config, "");
 
+        NUM_PAGES_TOTAL = Integer.parseInt(getNumPagesTotal());
+
+    }
+
+    /**
+     * Sets the total number of pages in the graph.
+     */
+    public static String getNumPagesTotal()
+    {
+        // Set the total number of links.
+        try
+        {
+            String line = "ok";
+
+            Path pt = new Path(finalCountOutput);
+            // We need to get the correct FileSystem.
+            Configuration config = new Configuration();
+            FileSystem fs;
+            if (DEBUG)
+                fs = FileSystem.get(config);
+            else
+                fs = FileSystem.get(new URI(bucketName), config);
+
+            BufferedReader br = new BufferedReader(new InputStreamReader(fs.open(pt)));
+            line = br.readLine();
+            line = line.substring(NUM_PAGES_TOTAL_START);
+            line = line.split(WHITESPACE)[0];
+            NUM_PAGES_TOTAL = Integer.parseInt(line);
+
+            return line;
+        }
+        catch(Exception e)
+        {
+            System.out.println("Error: ");
+            System.out.println(e);
+            return e.toString();
+        }
     }
 
     /**
@@ -651,6 +690,13 @@ public class PageRank
             }
 
         }
+
+        @Override
+        public void configure(JobConf conf) 
+        {
+            NUM_PAGES_TOTAL = Integer.parseInt(conf.get("NUM_PAGES_TOTAL"));
+        }
+
     }
 
     /**
@@ -707,6 +753,13 @@ public class PageRank
             outKey.set(matrixString);
             output.collect(outKey, outVal);
         }
+
+        @Override
+        public void configure(JobConf conf) 
+        {
+            NUM_PAGES_TOTAL = Integer.parseInt(conf.get("NUM_PAGES_TOTAL"));
+        }
+
     }
 
     /**
@@ -714,31 +767,6 @@ public class PageRank
      */
     public void calculatePageRank() throws IOException
     {
-        // Set the total number of links.
-        try
-        {
-            Path pt = new Path(this.finalCountOutput);
-            // We need to get the correct FileSystem.
-            Configuration config = new Configuration();
-            FileSystem fs;
-            if (DEBUG)
-                fs = FileSystem.get(config);
-            else
-                fs = FileSystem.get(new URI(this.bucketName), config);
-
-            BufferedReader br = new BufferedReader(new InputStreamReader(fs.open(pt)));
-            String line = br.readLine();
-            line = line.substring(NUM_PAGES_TOTAL_START);
-            line = line.split(WHITESPACE)[0];
-            this.NUM_PAGES_TOTAL = Integer.parseInt(line);
-        }
-        catch(Exception e)
-        {
-            System.out.println("Error: ");
-            System.out.println(e);
-            return;
-        }
-
         // Run the PageRank calulation NUM_PAGERANK_ITERS times.
         // The index starts from 1 just for naming purposes.
         for (int i = 1; i <= NUM_PAGERANK_ITERS; i++)
@@ -776,6 +804,8 @@ public class PageRank
             // Output type.
             conf.setOutputFormat(TextOutputFormat.class);
 
+            conf.set("NUM_PAGES_TOTAL", String.valueOf(NUM_PAGES_TOTAL));
+
             JobClient.runJob(conf);
             
             // Set the first iteration marker to false.
@@ -796,7 +826,7 @@ public class PageRank
     {
         public SortMapper(){}
 
-        private static final double threshold = 5.0 / NUM_PAGES_TOTAL;
+        private static double threshold = 0.0;
 
         private Text key = new Text();
         private static final Text value = new Text("");
@@ -806,6 +836,9 @@ public class PageRank
                 OutputCollector<Text, Text> output, 
                 Reporter reporter) throws IOException 
         {
+            if (threshold == 0.0)
+                threshold = 5.0 / NUM_PAGES_TOTAL;
+
             String[] tokens = line.toString().split(" ");
 
             if (Double.parseDouble(tokens[1]) >= threshold)
@@ -816,6 +849,13 @@ public class PageRank
             }
 
         }
+
+        @Override
+        public void configure(JobConf conf) 
+        {
+            NUM_PAGES_TOTAL = Integer.parseInt(conf.get("NUM_PAGES_TOTAL"));
+        }
+
     }
 
     /**
@@ -941,6 +981,8 @@ public class PageRank
         // Output type.
         conf.setOutputFormat(TextOutputFormat.class);
 
+        conf.set("NUM_PAGES_TOTAL", String.valueOf(NUM_PAGES_TOTAL));
+
         JobClient.runJob(conf);
     }
 
@@ -1024,7 +1066,7 @@ public class PageRank
 
         // Count number of pages.
         pagerank.countPages();
-
+        
         // Compute PageRank.
         pagerank.calculatePageRank();
 
@@ -1034,5 +1076,6 @@ public class PageRank
         // Merge outputs
         pagerank.mergeOutput();
     }
+
 }
 
