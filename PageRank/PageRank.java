@@ -104,8 +104,8 @@ public class PageRank
         else
         {
             this.bucketName = "hdfs://localhost:54310/" + bucketName;
-            this.XMLinputLocation = "/test.xml";
-            this.NUM_PAGERANK_ITERS = 3;
+            this.XMLinputLocation = "/hero.xml";
+            this.NUM_PAGERANK_ITERS = 2;
         }
 
         // Keep the file paths below.
@@ -196,7 +196,7 @@ public class PageRank
 
                 // Reject link if it contains ':' or '#' or '/'.
                 if (outlink.contains(":") || outlink.contains("#") || outlink.contains("/"))
-                    return;
+                    continue;
 
                 // Do not count self-referential links.
                 // We are outputting the inlink graph.
