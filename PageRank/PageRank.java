@@ -66,7 +66,7 @@ public class PageRank
     // Whitespace tokenizer.
     private static final String WHITESPACE = "\\s+";
     // Marker - must be one of the symbols that we do not allow.
-    private static final String MARKER = ":";
+    private static final String MARKER = "{";
 
     // Bucket that we will be operating in.
     private static String bucketName;
@@ -98,7 +98,7 @@ public class PageRank
         if (!DEBUG)
         {
             this.bucketName = "s3n://" + bucketName;
-            this.XMLinputLocation = "s3n://spring-2014-ds/data/enwiki-latest-pages-articles.xml";
+            this.XMLinputLocation = "s3n://spring-2014-ds/data/";
             this.NUM_PAGERANK_ITERS = 8;
         }
         else
@@ -161,8 +161,8 @@ public class PageRank
                     titleEnd-titleStart).replace(' ', '_');
 
             // Reject page if it contains ':' or '#' or '/'.
-            if (title.contains(":") || title.contains("#") || title.contains("/"))
-                    return;
+            //if (title.contains(":") || title.contains("#") || title.contains("/"))
+            //        return;
 
             value.set(title);
 
@@ -183,6 +183,9 @@ public class PageRank
             // Find the links.
             Matcher matcher = pattern.matcher(body);
 
+            // Unique links in the page.
+            Set<String> uniques = new HashSet<String>();
+
             // Output <currPage, outlink>
             while(matcher.find())
             {
@@ -195,19 +198,25 @@ public class PageRank
                     outlink = outlink.substring(0, pipeIndex);
 
                 // Reject link if it contains ':' or '#' or '/'.
-                if (outlink.contains(":") || outlink.contains("#") || outlink.contains("/"))
-                    continue;
+                //if (outlink.contains(":") || outlink.contains("#") || outlink.contains("/"))
+                //    continue;
 
                 // Do not count self-referential links.
-                // We are outputting the inlink graph.
                 if (!outlink.equals(title))
                 {
-                    key.set(outlink);
-                    output.collect(key, value);
+                    uniques.add(outlink);
                 }
             }
 
-            // Output a market that this page exists.
+            // Output only unique links in page.
+            // We are outputting the inlink graph.
+            for (String link : uniques)
+            {
+                key.set(link);
+                output.collect(key, value);
+            }
+
+            // Output a marker that this page exists.
             key.set(title);
             value.set(MARKER);
             output.collect(key, value);
